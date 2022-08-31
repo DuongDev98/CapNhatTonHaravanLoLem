@@ -165,7 +165,7 @@ namespace CapNhatTonLoLem
             }
 
             InvokeThongBao("Xử lý dữ liệu");
-            List<LineItem> lstUpdate = new List<LineItem>();
+            List<UpdateItem> lstUpdate = new List<UpdateItem>();
             foreach (DataRow rLoLem in dtLoLem.Rows)
             {
                 string barcode = rLoLem["CODE"].ToString();
@@ -176,12 +176,11 @@ namespace CapNhatTonLoLem
                     {
                         if (variant.barcode == barcode || variant.sku == barcode)
                         {
-                            LineItem item = new LineItem();
+                            UpdateItem item = new UpdateItem();
                             item.product_id = p.id;
                             item.product_variant_id = variant.id;
                             item.inventory_quantity = variant.inventory_quantity;
                             item.barcode = barcode;
-                            item.sku = barcode;
                             lstUpdate.Add(item);
                         }
                     }
@@ -193,7 +192,7 @@ namespace CapNhatTonLoLem
             {
                 //lấy location id
                 string locationId = HaravanUtils.GetLocationId(txtToken.Text.Trim(), ref error);
-                if (error.Length > 0)
+                if (error.Length > 0 && (locationId == null || locationId.Length == 0))
                 {
                     InvokeThongBao("Lỗi: " + error);
                     goto end;
@@ -206,21 +205,35 @@ namespace CapNhatTonLoLem
                     {
                         int dem = i + 1;
 
-                        LineItem temp = lstUpdate[i];
+                        UpdateItem temp = lstUpdate[i];
                         //lấy tồn kho
                         decimal tonKho = LayTonKho(dtLoLem, temp.barcode);
-
                         if (tonKho != temp.inventory_quantity)
                         {
-                            LineItem itemUpdate = new LineItem();
-                            itemUpdate.product_id = temp.product_id;
-                            itemUpdate.product_variant_id = temp.product_variant_id;
-                            itemUpdate.quantity = (long)(tonKho - temp.inventory_quantity);
-                            lstTemp.Add(itemUpdate);
+                            //kiểm tra biến thể không thể trùng
+                            bool isDuplicate = false;
+                            foreach (LineItem itemCheck in lstTemp)
+                            {
+                                if (itemCheck.product_id == temp.product_id && itemCheck.product_variant_id == temp.product_variant_id)
+                                {
+                                    isDuplicate = true;
+                                }
+                            }
+
+                            if (!isDuplicate)
+                            {
+                                LineItem itemUpdate = new LineItem();
+                                itemUpdate.product_id = temp.product_id;
+                                itemUpdate.product_variant_id = temp.product_variant_id;
+                                itemUpdate.quantity = (long)(tonKho - temp.inventory_quantity);
+                                lstTemp.Add(itemUpdate);
+                            }
                         }
 
                         if (lstTemp.Count > 0 && (lstTemp.Count % 200 == 0 || dem == lstUpdate.Count))
                         {
+                            System.Threading.Thread.Sleep(1000);
+
                             Inventory dataPost = new Inventory();
                             dataPost.location_id = long.Parse(locationId);
                             //dataPost.type = "set";
@@ -236,7 +249,6 @@ namespace CapNhatTonLoLem
                                 goto end;
                             }
                             lstTemp = new List<LineItem>();
-                            System.Threading.Thread.Sleep(400);
                         }
                     }
                 }
@@ -248,6 +260,10 @@ namespace CapNhatTonLoLem
             {
                 InvokeThongBao("");
                 Config.SaveTime();
+            }
+            else
+            {
+                InvokeThongBao("Lỗi: " + error);
             }
         }
 

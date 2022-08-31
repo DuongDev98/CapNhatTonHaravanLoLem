@@ -151,13 +151,18 @@ namespace CapNhatTonLoLem
         public List<LineItem> line_items { set; get; }
     }
 
-    public class LineItem
+    public class UpdateItem
     {
         public string barcode { set; get; }
-        public string sku { set; get; }
+        public long product_id { set; get; }
+        public long product_variant_id { set; get; }
+        public decimal inventory_quantity { set; get; }
+    }
+
+    public class LineItem
+    {
         public long product_id { set; get; }
         public long product_variant_id { set; get; }
         public long quantity { set; get; }
-        public decimal inventory_quantity { set; get; }
     }
 }
