@@ -66,12 +66,11 @@ namespace CapNhatTonLoLem
             List<Product> lst = new List<Product>();
             int page = 1;
             string queryUrl = "https://apis.haravan.com/com/products.json?page={0}";
-            List<string> lstBarcode = new List<string>();
             List<Product> temp = new List<Product>();
             decimal number = 0;
             do
             {
-                temp = LayDuLieuSanPham(token, string.Format(queryUrl, page), ref lstBarcode, ref number, ref error);
+                temp = LayDuLieuSanPham(token, string.Format(queryUrl, page), ref number, ref error);
                 if (temp != null) foreach (Product p in temp) lst.Add(p);
                 page++;
                 Thread.Sleep(400);
@@ -80,7 +79,7 @@ namespace CapNhatTonLoLem
             return lst;
         }
 
-        private static List<Product> LayDuLieuSanPham(string token, string queryUrl, ref List<string> lstBarcode, ref decimal number, ref string error)
+        private static List<Product> LayDuLieuSanPham(string token, string queryUrl, ref decimal number, ref string error)
         {
             try
             {
@@ -97,9 +96,8 @@ namespace CapNhatTonLoLem
                     Product pro = JsonConvert.DeserializeObject<Product>(item.ToString());
                     foreach (Variant v in pro.variants)
                     {
-                        if (v.barcode != null && !lstBarcode.Contains(v.barcode))
+                        if (v.barcode != null || v.sku != null)
                         {
-                            lstBarcode.Add(v.barcode);
                             lst.Add(pro);
                         }
                     }
@@ -127,7 +125,8 @@ namespace CapNhatTonLoLem
     {
         public long id;
         public string barcode;
-        public string inventory_quantity;
+        public string sku;
+        public decimal inventory_quantity;
     }
 
     public class Option
@@ -145,7 +144,7 @@ namespace CapNhatTonLoLem
 
     public class Inventory
     {
-        public string location_id { set; get; }
+        public long location_id { set; get; }
         public string type { set; get; }
         public string reason { set; get; }
         public string note { set; get; }
@@ -154,8 +153,11 @@ namespace CapNhatTonLoLem
 
     public class LineItem
     {
+        public string barcode { set; get; }
+        public string sku { set; get; }
         public long product_id { set; get; }
         public long product_variant_id { set; get; }
-        public decimal quantity { set; get; }
+        public long quantity { set; get; }
+        public decimal inventory_quantity { set; get; }
     }
 }

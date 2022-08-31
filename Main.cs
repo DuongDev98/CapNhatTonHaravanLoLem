@@ -147,12 +147,12 @@ namespace CapNhatTonLoLem
             if (error.Length > 0)
             {
                 InvokeThongBao("Lỗi: " + error);
+                hasError = true;
                 goto end;
             }
 
             if (dtLoLem.Rows.Count == 0)
             {
-                hasError = true;
                 goto end;
             }
 
@@ -165,22 +165,31 @@ namespace CapNhatTonLoLem
             }
 
             InvokeThongBao("Xử lý dữ liệu");
-            List<Product> lstProductUpdate = new List<Product>();
+            List<LineItem> lstUpdate = new List<LineItem>();
             foreach (DataRow rLoLem in dtLoLem.Rows)
             {
                 string barcode = rLoLem["CODE"].ToString();
                 //tìm kiếm, nếu có trong haravan thì cập nhật
                 foreach (Product p in lst)
                 {
-                    if (p.variants[0].barcode == barcode)
+                    foreach (Variant variant in p.variants)
                     {
-                        lstProductUpdate.Add(p);
+                        if (variant.barcode == barcode || variant.sku == barcode)
+                        {
+                            LineItem item = new LineItem();
+                            item.product_id = p.id;
+                            item.product_variant_id = variant.id;
+                            item.inventory_quantity = variant.inventory_quantity;
+                            item.barcode = barcode;
+                            item.sku = barcode;
+                            lstUpdate.Add(item);
+                        }
                     }
                 }
             }
 
             InvokeThongBao("Cập nhật dữ liệu");
-            if (lstProductUpdate.Count > 0)
+            if (lstUpdate.Count > 0)
             {
                 //lấy location id
                 string locationId = HaravanUtils.GetLocationId(txtToken.Text.Trim(), ref error);
@@ -193,25 +202,29 @@ namespace CapNhatTonLoLem
                 {
                     //Cập nhật 200 sản phẩm 1 lần
                     List<LineItem> lstTemp = new List<LineItem>();
-                    for (int i = 0; i < lstProductUpdate.Count; i++)
+                    for (int i = 0; i < lstUpdate.Count; i++)
                     {
                         int dem = i + 1;
 
-                        Product p = lstProductUpdate[i];
+                        LineItem temp = lstUpdate[i];
                         //lấy tồn kho
-                        decimal tonKho = LayTonKho(dtLoLem, p.variants[0].barcode);
+                        decimal tonKho = LayTonKho(dtLoLem, temp.barcode);
 
-                        LineItem item = new LineItem();
-                        item.product_id = p.id;
-                        item.product_variant_id = p.variants[0].id;
-                        item.quantity = tonKho;
-                        lstTemp.Add(item);
+                        if (tonKho != temp.inventory_quantity)
+                        {
+                            LineItem itemUpdate = new LineItem();
+                            itemUpdate.product_id = temp.product_id;
+                            itemUpdate.product_variant_id = temp.product_variant_id;
+                            itemUpdate.quantity = (long)(tonKho - temp.inventory_quantity);
+                            lstTemp.Add(itemUpdate);
+                        }
 
-                        if (dem % 200 == 0 || dem == lstProductUpdate.Count)
+                        if (lstTemp.Count > 0 && (lstTemp.Count % 200 == 0 || dem == lstUpdate.Count))
                         {
                             Inventory dataPost = new Inventory();
-                            dataPost.location_id = locationId;
-                            dataPost.type = "set";
+                            dataPost.location_id = long.Parse(locationId);
+                            //dataPost.type = "set";
+                            dataPost.type = "adjust";
                             dataPost.reason = "newproduct";
                             dataPost.note = "Cập nhật tồn từ PM Thuần Việt";
                             dataPost.line_items = lstTemp;
@@ -223,6 +236,7 @@ namespace CapNhatTonLoLem
                                 goto end;
                             }
                             lstTemp = new List<LineItem>();
+                            System.Threading.Thread.Sleep(400);
                         }
                     }
                 }
@@ -230,9 +244,9 @@ namespace CapNhatTonLoLem
 
             end:
             tmrProccess.Enabled = false;
-            InvokeThongBao("");
             if (!hasError)
             {
+                InvokeThongBao("");
                 Config.SaveTime();
             }
         }
@@ -327,23 +341,21 @@ namespace CapNhatTonLoLem
         {
             SaveConfig();
         }
-
         private void SaveConfig()
         {
             ConfigData data = new ConfigData(txtToken.Text.Trim(), txtServer.Text.Trim(), txtUser.Text.Trim(), txtPass.Text.Trim(), txtDatabase.Text.Trim(),
                 (int)numChuKy.Value, chkKhoiDongCungWin.Checked);
             Config.SaveConfig(data);
+            counter = numChuKy.Value * 60;
         }
-
         private void Main_Load(object sender, EventArgs e)
         {
             progressBar.Visible = false;
             progressBar.Step = 1;
             LoadConfig();
-            loadIp();
+            //loadIp();
             counter = numChuKy.Value * 60;
             tmrCapNhat.Enabled = true;
-            btnAn.PerformClick();
         }
 
         private void LoadConfig()
