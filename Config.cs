@@ -29,9 +29,10 @@ namespace CapNhatTonLoLem
             else data = JsonConvert.DeserializeObject<ConfigData>(json);
             return data;
         }
-        public static void SaveTime()
+
+        public static void SaveTime(DateTime time)
         {
-            File.WriteAllText(DATE_FILE, DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"));
+            File.WriteAllText(DATE_FILE, time.ToString("dd/MM/yyyy HH:mm"));
         }
         public static DateTime LoadTime()
         {
@@ -42,7 +43,7 @@ namespace CapNhatTonLoLem
             }
 
             string data = File.ReadAllText(DATE_FILE);
-            if (data.Length > 0) time = DateTime.ParseExact(data, "dd/MM/yyyy HH:mm:ss", null);
+            if (data.Length > 0) time = DateTime.ParseExact(data, "dd/MM/yyyy HH:mm", null);
             return time;
         }
     }

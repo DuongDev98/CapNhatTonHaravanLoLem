@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Data.SqlClient;
+using System.IO;
 using System.Net;
 using System.Windows.Forms;
 
@@ -136,130 +137,238 @@ namespace CapNhatTonLoLem
                 EnableControls(false);
             }));
 
+            DateTime timeStart = DateTime.Now;
             bool hasError = false;
             string error = "";
+
             SqlParameter pDMATHANGID = new SqlParameter("@THOIGIAN", SqlDbType.DateTime);
             pDMATHANGID.Value = Config.LoadTime();
             Database db = new Database(txtServer.Text.Trim(), txtUser.Text.Trim(), txtPass.Text.Trim(), txtDatabase.Text.Trim());
-            DataTable dtLoLem = db.GetTable(@"SELECT DMATHANGID, DMATHANG.CODE, SUM(TON) AS TON FROM OTONKHO INNER JOIN DMATHANG ON OTONKHO.DMATHANGID = DMATHANG.ID
-            WHERE COALESCE(OTONKHO.TIMEMODIFIED, OTONKHO.TIMECREATED)>=@THOIGIAN
-            GROUP BY DMATHANGID, DMATHANG.CODE", new SqlParameter[] { pDMATHANGID }, out error);
+
+            //bool updateAll = true;
+            //string sqlTonKho = @"SELECT DMATHANGID, DMATHANG.CODE, DMATHANG.MASANCO, SUM(TON) AS TON FROM OTONKHO INNER JOIN DMATHANG ON OTONKHO.DMATHANGID = DMATHANG.ID
+            //WHERE COALESCE(OTONKHO.TIMEMODIFIED, OTONKHO.TIMEMODIFIED) >= @THOIGIAN
+            //GROUP BY DMATHANGID, DMATHANG.CODE, DMATHANG.MASANCO";
+            //string sqlMatHang = @"SELECT ID, CODE, MASANCO, GIABAN FROM DMATHANG WHERE STATUS = 30 AND COALESCE(TIMEMODIFIED, TIMEMODIFIED)>= @THOIGIAN";
+
+            //DataTable dtTonLoLem = null, dtMatHang = null;
+            //if (updateAll)
+            //{
+            //    sqlTonKho = @"SELECT DMATHANGID, DMATHANG.CODE, DMATHANG.MASANCO, SUM(TON) AS TON FROM OTONKHO INNER JOIN DMATHANG ON OTONKHO.DMATHANGID = DMATHANG.ID
+            //    GROUP BY DMATHANGID, DMATHANG.CODE, DMATHANG.MASANCO";
+            //    dtTonLoLem = db.GetTable(sqlTonKho, null, out error);
+
+            //    sqlMatHang = @"SELECT ID, CODE, MASANCO, GIABAN FROM DMATHANG WHERE STATUS = 30";
+            //    dtMatHang = db.GetTable(sqlMatHang, null, out error);
+            //}
+            //else
+            //{
+            //    dtTonLoLem = db.GetTable(sqlTonKho, new SqlParameter[] { pDMATHANGID }, out error);
+            //    if (error.Length == 0) dtMatHang = db.GetTable(sqlMatHang, new SqlParameter[] { pDMATHANGID }, out error);
+            //}
+
+            string sqlTonKho = @"SELECT DMATHANGID, DMATHANG.CODE, DMATHANG.MASANCO, SUM(TON) AS TON FROM OTONKHO INNER JOIN DMATHANG ON OTONKHO.DMATHANGID = DMATHANG.ID
+                GROUP BY DMATHANGID, DMATHANG.CODE, DMATHANG.MASANCO";
+            DataTable dtTonLoLem = db.GetTable(sqlTonKho, null, out error);
+
+            string sqlMatHang = @"SELECT ID, CODE, MASANCO, GIABAN FROM DMATHANG WHERE STATUS = 30";
+            DataTable dtMatHang = db.GetTable(sqlMatHang, null, out error);
+
             if (error.Length > 0)
             {
                 InvokeThongBao("Lỗi: " + error);
                 hasError = true;
-                goto end;
             }
-
-            if (dtLoLem.Rows.Count == 0)
+            else
             {
-                goto end;
-            }
-
-            InvokeThongBao("Đang lấy dữ liệu từ Haravan");
-            List<Product> lst = HaravanUtils.GetProducts(txtToken.Text.Trim(), ref error);
-            if (error.Length > 0)
-            {
-                InvokeThongBao("Lỗi: " + error);
-                goto end;
-            }
-
-            InvokeThongBao("Xử lý dữ liệu");
-            List<UpdateItem> lstUpdate = new List<UpdateItem>();
-            foreach (DataRow rLoLem in dtLoLem.Rows)
-            {
-                string barcode = rLoLem["CODE"].ToString();
-                //tìm kiếm, nếu có trong haravan thì cập nhật
-                foreach (Product p in lst)
-                {
-                    foreach (Variant variant in p.variants)
-                    {
-                        if (variant.barcode == barcode || variant.sku == barcode)
-                        {
-                            UpdateItem item = new UpdateItem();
-                            item.product_id = p.id;
-                            item.product_variant_id = variant.id;
-                            item.inventory_quantity = variant.inventory_quantity;
-                            item.barcode = barcode;
-                            lstUpdate.Add(item);
-                        }
-                    }
-                }
-            }
-
-            InvokeThongBao("Cập nhật dữ liệu");
-            if (lstUpdate.Count > 0)
-            {
-                //lấy location id
-                string locationId = HaravanUtils.GetLocationId(txtToken.Text.Trim(), ref error);
-                if (error.Length > 0 && (locationId == null || locationId.Length == 0))
+                InvokeThongBao("Đang lấy dữ liệu từ Haravan");
+                List<Product> lstHaravan = HaravanUtils.GetProducts(txtToken.Text.Trim(), ref error);
+                if (error.Length > 0)
                 {
                     InvokeThongBao("Lỗi: " + error);
-                    goto end;
+                    hasError = true;
                 }
                 else
                 {
-                    //Cập nhật 200 sản phẩm 1 lần
-                    List<LineItem> lstTemp = new List<LineItem>();
-                    for (int i = 0; i < lstUpdate.Count; i++)
+                    //b1.Cập nhật tồn kho
+                    if (dtTonLoLem.Rows.Count > 0)
                     {
-                        int dem = i + 1;
-
-                        UpdateItem temp = lstUpdate[i];
-                        //lấy tồn kho
-                        decimal tonKho = LayTonKho(dtLoLem, temp.barcode);
-                        if (tonKho != temp.inventory_quantity)
+                        InvokeThongBao("Xử lý dữ liệu tồn kho");
+                        List<UpdateItem> lstUpdate = new List<UpdateItem>();
+                        foreach (DataRow rLoLem in dtTonLoLem.Rows)
                         {
-                            //kiểm tra biến thể không thể trùng
-                            bool isDuplicate = false;
-                            foreach (LineItem itemCheck in lstTemp)
-                            {
-                                if (itemCheck.product_id == temp.product_id && itemCheck.product_variant_id == temp.product_variant_id)
-                                {
-                                    isDuplicate = true;
-                                }
-                            }
+                            string maHang = rLoLem["CODE"] == DBNull.Value ? "" : rLoLem["CODE"].ToString();
+                            string maSanCo = rLoLem["MASANCO"] == DBNull.Value ? "" : rLoLem["MASANCO"].ToString();
 
-                            if (!isDuplicate)
+                            //tìm kiếm, nếu có trong haravan thì cập nhật
+                            foreach (Product p in lstHaravan)
                             {
-                                LineItem itemUpdate = new LineItem();
-                                itemUpdate.product_id = temp.product_id;
-                                itemUpdate.product_variant_id = temp.product_variant_id;
-                                itemUpdate.quantity = (long)(tonKho - temp.inventory_quantity);
-                                lstTemp.Add(itemUpdate);
+                                bool added = false;
+                                foreach (Variant variant in p.variants)
+                                {
+                                    UpdateItem item = new UpdateItem();
+                                    item.product_id = p.id;
+                                    item.product_variant_id = variant.id;
+                                    item.inventory_quantity = variant.inventory_quantity;
+                                    item.barcode = "";
+
+                                    if (maHang.Length > 0 && (variant.barcode == maHang || variant.sku == maHang))
+                                    {
+                                        item.barcode = maHang;
+                                    }
+
+                                    if (maSanCo.Length > 0 && (variant.barcode == maSanCo || variant.sku == maSanCo))
+                                    {
+                                        item.barcode = maSanCo;
+                                    }
+
+                                    if (item.barcode.Length > 0)
+                                    {
+                                        lstUpdate.Add(item);
+                                        added = true;
+                                    }
+                                }
+                                if (added) break;
                             }
                         }
 
-                        if (lstTemp.Count > 0 && (lstTemp.Count % 200 == 0 || dem == lstUpdate.Count))
+                        InvokeThongBao("Cập nhật dữ liệu tồn kho");
+                        if (lstUpdate.Count > 0)
                         {
-                            System.Threading.Thread.Sleep(1000);
-
-                            Inventory dataPost = new Inventory();
-                            dataPost.location_id = long.Parse(locationId);
-                            //dataPost.type = "set";
-                            dataPost.type = "adjust";
-                            dataPost.reason = "newproduct";
-                            dataPost.note = "Cập nhật tồn từ PM Thuần Việt";
-                            dataPost.line_items = lstTemp;
-                            HaravanUtils.CapNhatTonKho(txtToken.Text.Trim(), dataPost, ref error);
-                            if (error.Length > 0)
+                            //lấy location id
+                            string locationId = HaravanUtils.GetLocationId(txtToken.Text.Trim(), ref error);
+                            if (error.Length > 0 && (locationId == null || locationId.Length == 0))
                             {
                                 InvokeThongBao("Lỗi: " + error);
                                 hasError = true;
-                                goto end;
                             }
-                            lstTemp = new List<LineItem>();
+                            else
+                            {
+                                error = "";
+                                //Cập nhật 200 sản phẩm 1 lần
+                                List<TonKhoItem> lstTemp = new List<TonKhoItem>();
+                                for (int i = 0; i < lstUpdate.Count; i++)
+                                {
+                                    int dem = i + 1;
+                                    UpdateItem temp = lstUpdate[i];
+
+                                    //lấy tồn kho
+                                    decimal tonKho = LayTonKho(dtTonLoLem, temp.barcode);
+                                    if (tonKho != temp.inventory_quantity)
+                                    {
+                                        //kiểm tra biến thể không thể trùng
+                                        bool isDuplicate = false;
+                                        foreach (TonKhoItem itemCheck in lstTemp)
+                                        {
+                                            if (itemCheck.product_id == temp.product_id && itemCheck.product_variant_id == temp.product_variant_id)
+                                            {
+                                                isDuplicate = true;
+                                            }
+                                        }
+
+                                        if (!isDuplicate)
+                                        {
+                                            TonKhoItem itemUpdate = new TonKhoItem();
+                                            itemUpdate.product_id = temp.product_id;
+                                            itemUpdate.product_variant_id = temp.product_variant_id;
+                                            itemUpdate.quantity = (long)(tonKho - temp.inventory_quantity);
+                                            lstTemp.Add(itemUpdate);
+                                        }
+                                    }
+                                    if (lstTemp.Count > 0 && (lstTemp.Count % 200 == 0 || dem == lstUpdate.Count))
+                                    {
+                                        System.Threading.Thread.Sleep(500);
+
+                                        Inventory dataPost = new Inventory();
+                                        dataPost.location_id = long.Parse(locationId);
+                                        //dataPost.type = "set";
+                                        dataPost.type = "adjust";
+                                        dataPost.reason = "newproduct";
+                                        dataPost.note = "Cập nhật tồn từ PM Thuần Việt";
+                                        dataPost.line_items = lstTemp;
+                                        HaravanUtils.CapNhatTonKho(txtToken.Text.Trim(), dataPost, ref error);
+                                        if (error.Length > 0)
+                                        {
+                                            InvokeThongBao("Lỗi: " + error);
+                                            hasError = true;
+                                            break;
+                                        }
+                                        else
+                                        {
+                                            lstTemp = new List<TonKhoItem>();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    //2.Cập nhật giá mặt hàng
+                    if (!hasError)
+                    {
+                        error = "";
+                        InvokeThongBao("Cập nhật dữ liệu giá mặt hàng");
+                        foreach (DataRow rowMatHang in dtMatHang.Rows)
+                        {
+                            if (error.Length > 0)
+                            {
+                                hasError = true;
+                                break;
+                            }
+
+                            string maHang = rowMatHang["CODE"] == DBNull.Value ? "" : rowMatHang["CODE"].ToString(),
+                                   maSanCo = rowMatHang["MASANCO"] == DBNull.Value ? "" : rowMatHang["MASANCO"].ToString();
+                            long giaBan = rowMatHang["GIABAN"] == DBNull.Value ? 0 : (long)decimal.Parse(rowMatHang["GIABAN"].ToString());
+                            //kiểm tra giá nếu khác nhau thì cập nhật
+                            foreach (Product p in lstHaravan)
+                            {
+                                bool update = false;
+
+                                List<VariantPrice> lstTemp = new List<VariantPrice>();
+                                foreach (Variant variant in p.variants)
+                                {
+                                    bool added = false;
+                                    if (maHang.Length > 0 && (variant.barcode == maHang || variant.sku == maHang) && variant.price != giaBan)
+                                    {
+                                        added = true;
+                                    }
+
+                                    if (maSanCo.Length > 0 && (variant.barcode == maSanCo || variant.sku == maSanCo) && variant.price != giaBan)
+                                    {
+                                        added = true;
+                                    }
+
+                                    VariantPrice variantPrice = new VariantPrice();
+                                    variantPrice.id = variant.id;
+                                    variantPrice.price = added ? giaBan : variant.price;
+                                    lstTemp.Add(variantPrice);
+
+                                    if (added)
+                                    {
+                                        update = true;
+                                    }
+                                }
+
+                                if (update)
+                                {
+                                    //cập nhật dữ liệu lên haravan
+                                    if (lstTemp.Count > 0)
+                                    {
+                                        System.Threading.Thread.Sleep(500);
+                                        HaravanUtils.UpdatePrice(txtToken.Text.Trim(), p.id, lstTemp, ref error);
+                                    }
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            end:
-            tmrProccess.Enabled = false;
             if (!hasError)
             {
                 InvokeThongBao("");
-                Config.SaveTime();
+                //Config.SaveTime(timeStart);
             }
             else
             {
@@ -269,7 +378,7 @@ namespace CapNhatTonLoLem
 
         private decimal LayTonKho(DataTable dtLoLem, string barcode)
         {
-            DataRow[] rows = dtLoLem.Select("CODE='"+ barcode +"'");
+            DataRow[] rows = dtLoLem.Select("CODE='"+ barcode +"' OR MASANCO='"+barcode+"'");
             if (rows.Length > 0)
             {
                 return (decimal)rows[0]["TON"];

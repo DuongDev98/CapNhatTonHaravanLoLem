@@ -110,31 +110,94 @@ namespace CapNhatTonLoLem
                 return null;
             }
         }
+
+        public static void UpdatePrice(string token, long productid, List<VariantPrice> lstPrice, ref string error)
+        {
+            string queryUrl = "https://apis.haravan.com/com/products/"+productid+".json";
+            try
+            {
+                HttpWebRequest httpWeb = (HttpWebRequest)WebRequest.Create(queryUrl);
+                httpWeb.Method = "PUT";
+                httpWeb.ContentType = "application/json; charset=UTF-8";
+                httpWeb.Accept = "application/json";
+                httpWeb.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + token);
+
+                DataPostProductPrice itemPost = new DataPostProductPrice(productid, lstPrice);
+
+                string data = JsonConvert.SerializeObject(itemPost);
+                using (Stream writer = httpWeb.GetRequestStream())
+                {
+                    byte[] arr = Encoding.UTF8.GetBytes(data);
+                    writer.Write(arr, 0, arr.Length);
+                }
+
+                using (StreamReader reader = new StreamReader(httpWeb.GetResponse().GetResponseStream()))
+                {
+                    string resp = reader.ReadToEnd();
+                }
+            }
+            catch (WebException ex)
+            {
+                HttpWebResponse resp = (HttpWebResponse)ex.Response;
+                if ((int)resp.StatusCode == 422)
+                {
+                    error = "";
+                }
+                else
+                {
+                    error = ex.Message;
+                }
+            }
+        }
+    }
+
+    public class DataPostProductPrice
+    {
+        public DataPostProductPrice(long productId, List<VariantPrice> lst)
+        {
+            product = new ProductPrice();
+            product.id = productId;
+            product.variants = lst;
+        }
+        public ProductPrice product { set; get; }
+    }
+
+    public class ProductPrice
+    {
+        public long id { set; get; }
+        public List<VariantPrice> variants { set; get; }
+    }
+
+    public class VariantPrice
+    {
+        public long id { set; get; }
+        public long price { set; get; }
     }
 
     public class Product
     {
-        public long id;
-        public string title;
-        public List<Variant> variants;
-        public string product_id;
-        public List<Option> options;
+        public long id { set; get; }
+        public string title { set; get; }
+        public List<Variant> variants { set; get; }
+        //public string product_id { set; get; }
+        public List<Option> options { set; get; }
     }
 
     public class Variant
     {
-        public long id;
-        public string barcode;
-        public string sku;
-        public decimal inventory_quantity;
+        public long id { set; get; }
+        public string barcode { set; get; }
+        public string sku { set; get; }
+        public long inventory_quantity { set; get; }
+        public long price { set; get; }
     }
 
     public class Option
     {
-        public string name;
-        public long id;
-        public long position;
-        public long product_id;
+        public string name { set; get; }
+        public long id { set; get; }
+        public long position { set; get; }
+        public long product_id { set; get; }
     }
 
     public class DataPostInventory
@@ -148,7 +211,7 @@ namespace CapNhatTonLoLem
         public string type { set; get; }
         public string reason { set; get; }
         public string note { set; get; }
-        public List<LineItem> line_items { set; get; }
+        public List<TonKhoItem> line_items { set; get; }
     }
 
     public class UpdateItem
@@ -156,10 +219,10 @@ namespace CapNhatTonLoLem
         public string barcode { set; get; }
         public long product_id { set; get; }
         public long product_variant_id { set; get; }
-        public decimal inventory_quantity { set; get; }
+        public long inventory_quantity { set; get; }
     }
 
-    public class LineItem
+    public class TonKhoItem
     {
         public long product_id { set; get; }
         public long product_variant_id { set; get; }
